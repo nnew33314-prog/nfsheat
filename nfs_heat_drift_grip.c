@@ -1,6 +1,7 @@
 // nfs_heat_drift_grip.c
-// GoldHEN plugin for NFS Heat - Drift/Grip handling bucket selector
-// VCFG-style GPU overlay: CPU draws palette bitmap, osd8 shader composites
+// NFS Heat Drift/Grip/Street Selector - Complete GoldHEN Plugin
+// VCFG-style GPU overlay + tuning EBX redirect + persistent config
+// Build: GitHub Actions (OpenOrbis toolchain) -> .prx
 
 #include <stdarg.h>
 #include <ps4/standard.h>
@@ -19,7 +20,7 @@
 #include <stdio.h>
 
 // ============================================================
-// VCFG CONSTANTS (from vov.h)
+// CONSTANTS
 // ============================================================
 #define VOV_W        512u
 #define VOV_MAX_H    720u
@@ -29,17 +30,21 @@
 #define VOV_NBUF     10u
 #define VOV_MEM_SZ   (VOV_NBUF * VOV_BUF_SZ)
 
-// Palette indices
-enum { C_NONE, C_CREAM, C_INK, C_YELLOW, C_RED, C_BLUE, C_GREY, C_SEL, C_N };
-static const uint32_t k_rgb[C_N] = { 0, 0xefeee8, 0x0b0b0b, 0xf5d23a, 0xf2502e, 0x4f86e6, 0x8c8a82, 0xe2e0d6 };
-
-// Menu combo (from menu_combo.h)
-#define MENU_COMBO_DEFAULT 0x0006u
-#define MENU_COMBO_ALLOWED 0x0F06u
+#define MENU_COMBO_DEFAULT 0x0006u  // L3+R3
 #define MENU_HOLD_MS 3000
+#define CFG_PATH "/data/GoldHEN/mods/nfs_heat/config.bin"
+
+enum { C_NONE, C_CREAM, C_INK, C_YELLOW, C_RED, C_BLUE, C_GREY, C_SEL, C_CYAN, C_ORANGE, C_N };
+static const uint32_t k_rgb[C_N] = { 
+    0, 0xefeee8, 0x0b0b0b, 0xf5d23a, 0xf2502e, 
+    0x4f86e6, 0x8c8a82, 0xe2e0d6, 0x00ffff, 0xff8800 
+};
+
+typedef enum { BUCKET_STREET=0, BUCKET_DRIFT=1, BUCKET_RACE=2 } BucketMode;
+typedef enum { MENU_MAIN, MENU_OPTIONS, MENU_ABOUT } MenuScreen;
 
 // ============================================================
-// SIMPLE 5x7 FONT (embedded)
+// 5x7 FONT
 // ============================================================
 static const uint8_t font5x7[96][5] = {
     {0},{0x00,0x00,0x5F,0x00,0x00},{0x00,0x07,0x00,0x07,0x00},{0x14,0x7F,0x14,0x7F,0x14},
@@ -104,7 +109,35 @@ static int alloc_mem() {
 static void free_mem() { if (g_uid >= 0) { sceKernelFreeMemBlock(g_uid); g_uid = -1; g_mem = 0; } }
 
 // ============================================================
-// VCFG OVERLAY STATE
+// CONFIG (persistent)
+// ============================================================
+typedef struct {
+    uint32_t magic;
+    BucketMode bucket;
+    uint8_t  show_hud;
+    uint8_t  hdr_mode;
+    uint8_t  menu_scale;
+    uint8_t  pad[11];
+} Config;
+
+static Config g_cfg = { 0x4E465348, BUCKET_STREET, 1, 0, 1, {0} }; // 'NFSH'
+
+static void load_config() {
+    int fd = sceIoOpen(CFG_PATH, O_RDONLY, 0);
+    if (fd >= 0) {
+        sceIoRead(fd, &g_cfg, sizeof(Config));
+        sceIoClose(fd);
+    }
+}
+
+static void save_config() {
+    sceIoMkdir("/data/GoldHEN/mods/nfs_heat", 0777);
+    int fd = sceIoOpen(CFG_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (fd >= 0) { sceIoWrite(fd, &g_cfg, sizeof(Config)); sceIoClose(fd); }
+}
+
+// ============================================================
+// OVERLAY CANVAS (VCFG)
 // ============================================================
 typedef struct {
     uint32_t pal[256];
@@ -121,7 +154,6 @@ static uint32_t g_tick = 0;
 static int g_cur = 0;
 
 static void bset(void* d, int v, size_t n) { uint8_t* p=(uint8_t*)d; while(n--) *p++=(uint8_t)v; }
-
 static uint32_t pack_rgb(uint32_t rgb) { return (rgb & 0xFFFFFFu) | 0xFF000000u; }
 
 static int pair(Canvas* c, int fg, int bg) {
@@ -165,7 +197,7 @@ static void round_corners(Canvas* c, int x, int y, int w, int h, int r) {
     }
 }
 
-static void draw_char2(Canvas* c, char ch, int x, int y, int fg, int bg) {
+static void draw_char(Canvas* c, char ch, int x, int y, int fg, int bg) {
     if (ch < 32 || ch > 126) ch = '?';
     const uint8_t* g = font5x7[ch - 32];
     int p = pair(c, fg, bg);
@@ -183,94 +215,16 @@ static void draw_char2(Canvas* c, char ch, int x, int y, int fg, int bg) {
 }
 
 static void draw_text(Canvas* c, const char* s, int x, int y, int fg, int bg) {
-    while (*s) { draw_char2(c, *s++, x, y, fg, bg); x += 6; }
+    while (*s) { draw_char(c, *s++, x, y, fg, bg); x += 6; }
+}
+
+static void draw_text_centered(Canvas* c, const char* s, int y, int fg, int bg) {
+    int len = 0; const char* t = s; while(*t++) len++;
+    draw_text(c, s, (VOV_W - len * 6) / 2, y, fg, bg);
 }
 
 // ============================================================
-// MENU STATE
-// ============================================================
-typedef enum { BUCKET_STREET=0, BUCKET_DRIFT=1, BUCKET_RACE=2 } BucketMode;
-static BucketMode g_bucket = BUCKET_STREET;
-static bool g_menu_open = false;
-static int g_selected = 0;
-static uint64_t g_hold_start = 0;
-static bool g_was_holding = false;
-static uint64_t g_frame = 0;
-static uint64_t g_tick_counter = 0;
-
-static uint64_t get_time_ms(void) { return g_frame++ * 16; }
-
-static void handle_input() {
-    SceCtrlData data;
-    sceCtrlPeekBufferPositive(0, &data, 1);
-    uint32_t btn = data.buttons;
-    
-    // Menu combo: L3(0x0002) + R3(0x0004) = 0x0006
-    bool holding = (btn & MENU_COMBO_DEFAULT) == MENU_COMBO_DEFAULT;
-    uint64_t now = get_time_ms();
-    
-    if (holding) {
-        if (!g_was_holding) { g_hold_start = now; g_was_holding = true; }
-        else if (!g_menu_open && (now - g_hold_start >= MENU_HOLD_MS)) { g_menu_open = true; g_selected = g_bucket; }
-    } else { g_was_holding = false; g_hold_start = 0; }
-    
-    if (g_menu_open) {
-        if (btn & 0x1000) { g_selected = (g_selected + 2) % 3; } // UP
-        if (btn & 0x2000) { g_selected = (g_selected + 1) % 3; } // DOWN
-        if (btn & 0x10000) { g_bucket = g_selected; g_menu_open = false; } // CROSS
-        if (btn & 0x20000) { g_menu_open = false; } // CIRCLE
-    }
-}
-
-// ============================================================
-// DRAW MENU (VCFG style)
-// ============================================================
-static void draw_menu(Canvas* c) {
-    if (!g_menu_open) {
-        canvas_begin(c, VOV_W, 48);
-        rect(c, 0, 0, VOV_W, 48, C_INK);
-        round_corners(c, 0, 0, VOV_W, 48, 8);
-        draw_text(c, "NFS HEAT: HOLD L3+R3 (3s) FOR MENU", 16, 18, C_CREAM, -1);
-        c->w = VOV_W; c->h = 48;
-        return;
-    }
-    
-    unsigned h = 256;
-    canvas_begin(c, VOV_W, h);
-    
-    // Panel background
-    rect(c, 0, 0, VOV_W, h, C_INK);
-    round_corners(c, 0, 0, VOV_W, h, 8);
-    rect(c, 2, 2, VOV_W - 4, h - 4, C_CREAM);
-    round_corners(c, 2, 2, VOV_W - 4, h - 4, 6);
-    
-    // Title
-    draw_text(c, "NFS HEAT DRIFT/GRIP", 16, 12, C_INK, -1);
-    draw_text(c, "v1.0", 420, 12, C_GREY, -1);
-    
-    // Current
-    const char* buckets[] = {"STREET (UNITE Simcade)", "DRIFT (Hayeduce 3.3.2)", "RACE (UNITE Grip)"};
-    draw_text(c, "Current:", 16, 36, C_INK, -1);
-    draw_text(c, buckets[g_bucket], 16, 50, C_BLUE, -1);
-    
-    // Menu items
-    draw_text(c, "SELECT HANDLING:", 16, 74, C_INK, -1);
-    for (int i = 0; i < 3; i++) {
-        int y = 94 + i * 22;
-        int sel = (g_selected == i);
-        rect(c, 12, y - 2, VOV_W - 24, 20, sel ? C_SEL : C_CREAM);
-        draw_text(c, sel ? "> " : "  ", 16, y, sel ? C_INK : C_GREY, -1);
-        draw_text(c, buckets[i], 32, y, sel ? C_INK : C_GREY, -1);
-    }
-    
-    // Hints
-    draw_text(c, "D-PAD: NAVIGATE  CROSS: SELECT  CIRCLE: CLOSE", 16, 180, C_GREY, -1);
-    
-    c->w = VOV_W; c->h = h;
-}
-
-// ============================================================
-// COMMIT TO GPU MEMORY (VCFG vov_commit style)
+// COMMIT TO GPU (zero-copy, VCFG style)
 // ============================================================
 static void commit_buf(int buf) {
     Canvas* c = &g_canvas[buf];
@@ -281,12 +235,200 @@ static void commit_buf(int buf) {
     const uint64_t* s = (const uint64_t*)c->pix;
     size_t n = ((size_t)c->w * c->h + 7) / 8;
     for (size_t i = 0; i < n; i++) if (d[i] != s[i]) d[i] = s[i];
-    g_hash[buf] = 0;
-    g_used[buf] = ++g_tick;
+    g_hash[buf] = 0; g_used[buf] = ++g_tick;
 }
 
 // ============================================================
-// GNM HOOK (inject overlay draw via osd8 shader)
+// MENU STATE
+// ============================================================
+static BucketMode g_bucket = BUCKET_STREET;
+static MenuScreen g_screen = MENU_MAIN;
+static int g_selected = 0;
+static bool g_menu_open = false;
+static uint64_t g_hold_start = 0;
+static bool g_was_holding = false;
+static uint64_t g_frame = 0;
+static uint8_t g_anim_frame = 0;
+
+static uint64_t get_time_ms(void) { return g_frame++ * 16; }
+
+static const char* bucket_name(BucketMode b) {
+    return b==BUCKET_STREET ? "STREET (UNITE Simcade)" : 
+           b==BUCKET_DRIFT  ? "DRIFT (Hayeduce 3.3.2)" : "RACE (UNITE Grip)";
+}
+
+static const char* bucket_short(BucketMode b) {
+    return b==BUCKET_STREET ? "STREET" : b==BUCKET_DRIFT ? "DRIFT" : "RACE";
+}
+
+// ============================================================
+// INPUT
+// ============================================================
+static void handle_input() {
+    SceCtrlData data;
+    sceCtrlPeekBufferPositive(0, &data, 1);
+    uint32_t btn = data.buttons;
+    
+    bool holding = (btn & MENU_COMBO_DEFAULT) == MENU_COMBO_DEFAULT;
+    uint64_t now = get_time_ms();
+    
+    if (holding) {
+        if (!g_was_holding) { g_hold_start = now; g_was_holding = true; }
+        else if (!g_menu_open && (now - g_hold_start >= MENU_HOLD_MS)) { 
+            g_menu_open = true; g_screen = MENU_MAIN; g_selected = g_bucket; 
+        }
+    } else { g_was_holding = false; g_hold_start = 0; }
+    
+    if (!g_menu_open) return;
+    
+    int max_sel = (g_screen == MENU_MAIN) ? 3 : (g_screen == MENU_OPTIONS) ? 4 : 1;
+    
+    if (btn & 0x1000) { g_selected = (g_selected + max_sel - 1) % max_sel; sceKernelUsleep(150000); } // UP
+    if (btn & 0x2000) { g_selected = (g_selected + 1) % max_sel; sceKernelUsleep(150000); } // DOWN
+    
+    if (btn & 0x10000) { // CROSS
+        if (g_screen == MENU_MAIN) {
+            if (g_selected < 3) { g_bucket = (BucketMode)g_selected; save_config(); }
+            else if (g_selected == 3) { g_screen = MENU_OPTIONS; g_selected = 0; }
+        } else if (g_screen == MENU_OPTIONS) {
+            if (g_selected == 0) g_cfg.show_hud ^= 1;
+            else if (g_selected == 1) g_cfg.hdr_mode ^= 1;
+            else if (g_selected == 2) g_cfg.menu_scale = (g_cfg.menu_scale + 1) % 3;
+            else if (g_selected == 3) { g_screen = MENU_ABOUT; g_selected = 0; }
+            save_config();
+        } else if (g_screen == MENU_ABOUT) {
+            g_screen = MENU_MAIN; g_selected = g_bucket;
+        }
+        sceKernelUsleep(150000);
+    }
+    
+    if (btn & 0x20000) { // CIRCLE
+        if (g_screen == MENU_OPTIONS || g_screen == MENU_ABOUT) { g_screen = MENU_MAIN; g_selected = g_bucket; }
+        else { g_menu_open = false; }
+        sceKernelUsleep(150000);
+    }
+}
+
+// ============================================================
+// DRAW FUNCTIONS
+// ============================================================
+static void draw_panel(Canvas* c, int x, int y, int w, int h, int bg, int border) {
+    rect(c, x, y, w, h, bg);
+    if (border >= 0) round_corners(c, x, y, w, h, 8);
+    if (border >= 0) rect(c, x+2, y+2, w-4, h-4, C_CREAM);
+    if (border >= 0) round_corners(c, x+2, y+2, w-4, h-4, 6);
+}
+
+static void draw_item(Canvas* c, int idx, int y, const char* text, int fg, int bg, int sel) {
+    int item_bg = sel ? C_SEL : bg;
+    rect(c, 12, y - 2, VOV_W - 24, 20, item_bg);
+    draw_text(c, sel ? "> " : "  ", 16, y, sel ? C_INK : C_GREY, -1);
+    draw_text(c, text, 32, y, sel ? fg : C_GREY, -1);
+}
+
+static void draw_main_menu(Canvas* c) {
+    draw_panel(c, 0, 0, VOV_W, 256, C_INK, 1);
+    
+    // Title bar
+    rect(c, 4, 4, VOV_W - 8, 28, C_INK);
+    draw_text(c, "NFS HEAT DRIFT/GRIP", 16, 10, C_CREAM, -1);
+    draw_text(c, "v1.0", 440, 10, C_GREY, -1);
+    
+    // Current bucket
+    draw_text(c, "ACTIVE:", 16, 40, C_INK, -1);
+    draw_text(c, bucket_name(g_bucket), 16, 54, C_BLUE, -1);
+    
+    // Separator
+    rect(c, 12, 70, VOV_W - 24, 1, C_GREY);
+    
+    // Menu items
+    draw_text(c, "SELECT HANDLING:", 16, 78, C_INK, -1);
+    const char* items[] = {"STREET - UNITE Simcade", "DRIFT - Hayeduce 3.3.2", "RACE - UNITE Grip", "OPTIONS"};
+    for (int i = 0; i < 4; i++) {
+        int y = 94 + i * 22;
+        draw_item(c, i, y, items[i], C_INK, C_CREAM, g_selected == i);
+    }
+    
+    // Hints
+    draw_text(c, "D-PAD: NAVIGATE  CROSS: SELECT  CIRCLE: BACK/CLOSE", 16, 200, C_GREY, -1);
+    draw_text(c, "HOLD L3+R3 (3s) TO TOGGLE", 16, 214, C_ORANGE, -1);
+    
+    c->w = VOV_W; c->h = 256;
+}
+
+static void draw_options_menu(Canvas* c) {
+    draw_panel(c, 0, 0, VOV_W, 256, C_INK, 1);
+    
+    rect(c, 4, 4, VOV_W - 8, 28, C_INK);
+    draw_text(c, "OPTIONS", 16, 10, C_CREAM, -1);
+    
+    const char* opt_names[] = {
+        "SHOW HUD INDICATOR", "HDR MODE", "MENU SCALE", "ABOUT"
+    };
+    const char* opt_vals[] = {
+        g_cfg.show_hud ? "ON" : "OFF",
+        g_cfg.hdr_mode ? "ON" : "OFF",
+        g_cfg.menu_scale == 0 ? "SMALL" : g_cfg.menu_scale == 1 ? "NORMAL" : "LARGE",
+        ""
+    };
+    
+    for (int i = 0; i < 4; i++) {
+        int y = 54 + i * 28;
+        draw_item(c, i, y, opt_names[i], C_INK, C_CREAM, g_selected == i);
+        if (i < 3) draw_text(c, opt_vals[i], VOV_W - 100, y, g_selected == i ? C_YELLOW : C_GREY, -1);
+    }
+    
+    draw_text(c, "CROSS: TOGGLE  CIRCLE: BACK", 16, 200, C_GREY, -1);
+    c->w = VOV_W; c->h = 256;
+}
+
+static void draw_about_menu(Canvas* c) {
+    draw_panel(c, 0, 0, VOV_W, 256, C_INK, 1);
+    
+    rect(c, 4, 4, VOV_W - 8, 28, C_INK);
+    draw_text(c, "ABOUT", 16, 10, C_CREAM, -1);
+    
+    draw_text_centered(c, "NFS HEAT DRIFT/GRIP SELECTOR", 50, C_CYAN, -1);
+    draw_text_centered(c, "Version 1.0", 70, C_GREY, -1);
+    draw_text_centered(c, "UNITE 3.5 + Hayeduce 3.3.2", 90, C_CREAM, -1);
+    draw_text_centered(c, "GoldHEN Plugin / VCFG Overlay", 110, C_GREY, -1);
+    draw_text_centered(c, "L3+R3 Hold 3s to Open", 140, C_ORANGE, -1);
+    draw_text_centered(c, "Config: /data/GoldHEN/mods/nfs_heat/", 160, C_GREY, -1);
+    draw_text_centered(c, "CROSS/CIRCLE: BACK", 200, C_GREY, -1);
+    
+    c->w = VOV_W; c->h = 256;
+}
+
+static void draw_hud(Canvas* c) {
+    if (!g_cfg.show_hud) return;
+    canvas_begin(c, 200, 24);
+    rect(c, 0, 0, 200, 24, C_INK);
+    round_corners(c, 0, 0, 200, 24, 4);
+    rect(c, 2, 2, 196, 20, C_CREAM);
+    round_corners(c, 2, 2, 196, 20, 3);
+    int color = g_bucket==BUCKET_DRIFT ? C_RED : g_bucket==BUCKET_RACE ? C_BLUE : C_GREEN;
+    draw_text(c, "HANDLING: ", 8, 8, C_INK, -1);
+    draw_text(c, bucket_short(g_bucket), 80, 8, color, -1);
+    c->w = 200; c->h = 24;
+}
+
+static void draw_menu(Canvas* c) {
+    g_anim_frame++;
+    
+    if (!g_menu_open) {
+        draw_hud(c);
+        return;
+    }
+    
+    switch (g_screen) {
+        case MENU_MAIN: draw_main_menu(c); break;
+        case MENU_OPTIONS: draw_options_menu(c); break;
+        case MENU_ABOUT: draw_about_menu(c); break;
+    }
+}
+
+// ============================================================
+// GNM HOOK
 // ============================================================
 typedef int (*gnm_submit_t)(void*, int, void*, int);
 static gnm_submit_t g_orig_gnm = 0;
@@ -302,27 +444,6 @@ static int hook_gnm(void* cmd_bufs, int count, void* sync, int flags) {
 }
 
 // ============================================================
-// OVERLAY THREAD
-// ============================================================
-static void* overlay_thread(void* arg) {
-    (void)arg;
-    while (1) { if (sceKernelGetProcessId() > 0) break; sceKernelUsleep(100000); }
-    
-    if (alloc_mem() < 0) return NULL;
-    
-    // Hook sceGnmSubmitCommandBuffers
-    g_orig_gnm = (gnm_submit_t)sceKernelDlsym(RTLD_DEFAULT, "sceGnmSubmitCommandBuffers");
-    
-    while (1) {
-        handle_input();
-        draw_menu(&g_canvas[g_cur]);
-        commit_buf(g_cur);
-        sceKernelUsleep(16000);
-    }
-    return NULL;
-}
-
-// ============================================================
 // FILE HOOKS (tuning EBX redirect)
 // ============================================================
 #define MOD_BASE "/data/GoldHEN/mods/nfs_heat"
@@ -331,7 +452,7 @@ static ssize_t (*o_read)(int,void*,size_t)=0;
 static int (*o_close)(int)=0;
 static off_t (*o_lseek)(int,off_t,int)=0;
 
-typedef struct { int fd, real_fd; char path[512]; } Intercepted;
+typedef struct { int fd, real_fd; } Intercepted;
 static Intercepted g_int[64]; static int g_inc=0;
 
 static bool is_tuning(const char* p) {
@@ -353,7 +474,6 @@ static int h_open(const char* p, int f, mode_t m) {
         if(fd>=0 && g_inc<64) {
             g_int[g_inc].fd = -(g_inc+1000);
             g_int[g_inc].real_fd = fd;
-            strcpy(g_int[g_inc].path, mp);
             return g_int[g_inc++].fd;
         }
         if(fd>=0) o_close(fd);
@@ -384,22 +504,48 @@ static void install_file_hooks() {
 }
 
 // ============================================================
+// OVERLAY THREAD
+// ============================================================
+static void* overlay_thread(void* arg) {
+    (void)arg;
+    while (1) { if (sceKernelGetProcessId() > 0) break; sceKernelUsleep(100000); }
+    
+    load_config();
+    g_bucket = g_cfg.bucket;
+    g_selected = g_bucket;
+    
+    if (alloc_mem() < 0) return NULL;
+    
+    g_orig_gnm = (gnm_submit_t)sceKernelDlsym(RTLD_DEFAULT, "sceGnmSubmitCommandBuffers");
+    
+    while (1) {
+        handle_input();
+        draw_menu(&g_canvas[g_cur]);
+        commit_buf(g_cur);
+        sceKernelUsleep(16000);
+    }
+    return NULL;
+}
+
+// ============================================================
+// FILE HOOK THREAD
+// ============================================================
+static void* file_hook_thread(void* arg) {
+    (void)arg;
+    while (sceKernelGetProcessId() <= 0) sceKernelUsleep(100000);
+    install_file_hooks();
+    return NULL;
+}
+
+// ============================================================
 // PLUGIN ENTRY
 // ============================================================
 int plugin_load(void) {
-    ScePthread t;
-    scePthreadCreate(&t, NULL, overlay_thread, NULL, "nfs_heat_vov");
-    scePthreadDetach(t);
-    
-    // File hooks in separate thread
-    ScePthread t2;
-    scePthreadCreate(&t2, NULL, [](void*){
-        while(sceKernelGetProcessId()<=0) sceKernelUsleep(100000);
-        install_file_hooks();
-        return NULL;
-    }, NULL, "nfs_heat_file");
+    ScePthread t1, t2;
+    scePthreadCreate(&t1, NULL, overlay_thread, NULL, "nfs_heat_vov");
+    scePthreadDetach(t1);
+    scePthreadCreate(&t2, NULL, file_hook_thread, NULL, "nfs_heat_file");
     scePthreadDetach(t2);
-    
     return 0;
 }
 
