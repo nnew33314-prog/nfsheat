@@ -40,12 +40,16 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/GoldHEN/GoldHEN_Plugins_SDK.git "$GOLDHEN_SDK"
 
+      - name: Get GoldHEN Plugin Repository (for plugin_common.h)
+        run: |
+          git clone --depth 1 https://github.com/GoldHEN/GoldHEN_Plugins_Repository.git _deps/plugins
+
       - name: Build GoldHEN SDK library
         run: make -C "$GOLDHEN_SDK" PRINTF=1
 
-      - name: Build plugin (using plugin_src structure)
+      - name: Build plugin
         run: |
-          mkdir -p _deps/plugins/bin/plugins/prx_final _deps/plugins/bin/plugins/elf_final _deps/plugins/plugin_src
+          mkdir -p _deps/plugins/bin/plugins/prx_final _deps/plugins/bin/plugins/elf_final
           cp -r nfs_heat_drift_grip _deps/plugins/plugin_src/
           cd _deps/plugins
           make -C plugin_src/nfs_heat_drift_grip DEBUG=0
