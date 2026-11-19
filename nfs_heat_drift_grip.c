@@ -24,6 +24,48 @@
 #include <goldhen/time.h>
 
 // ============================================================
+// MISSING PS4 SYSCALL IMPLEMENTATIONS
+// ============================================================
+
+// Syscall numbers for PS4 9.00+
+#define SYS_getpid        20
+#define SYS_sceCtrlPeekBufferPositive  0x115  // approximate, varies by FW
+
+// Inline syscall for getpid
+static inline int sys_getpid(void) {
+    int ret;
+    __asm__ volatile (
+        "movl $20, %%eax\n"
+        "syscall\n"
+        : "=a"(ret)
+        :
+        : "rcx", "r11", "memory"
+    );
+    return ret;
+}
+
+// sceKernelGetProcessId - returns current process ID
+int sceKernelGetProcessId(void) {
+    return sys_getpid();
+}
+
+// sceCtrlPeekBufferPositive - read controller state
+// This is a complex syscall, stub returns 0 for now
+// Real implementation would use syscall 0x115 or similar
+int sceCtrlPeekBufferPositive(int port, SceCtrlData* data, int count) {
+    (void)port;
+    if (data && count > 0) {
+        // Zero out - plugin will read via direct syscall if needed
+        data->buttons = 0;
+        data->lx = 0;
+        data->ly = 0;
+        data->rx = 0;
+        data->ry = 0;
+    }
+    return 0;
+}
+
+// ============================================================
 // FORWARD DECLARATIONS
 // ============================================================
 static void klog(const char *fmt, ...);
