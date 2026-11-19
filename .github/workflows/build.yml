@@ -1,5 +1,5 @@
 # .github/workflows/build.yml
-# Fixed GoldHEN SDK header installation
+# Fixed GoldHEN SDK header installation - no heredoc issues
 
 name: Build NFS Heat Drift/Grip Plugin
 
@@ -184,8 +184,9 @@ jobs:
         run: |
           mkdir -p /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen
           
+          # Create stub menu.h if missing
           if [ ! -f /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/menu.h ]; then
-            cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/menu.h << 'EOF'
+            cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/menu.h << 'GOLDHEN_MENU_EOF'
             #ifndef GOLDHEN_MENU_H
             #define GOLDHEN_MENU_H
             #include <stdint.h>
@@ -205,12 +206,13 @@ jobs:
             extern void goldhen_menu_set_item_label(int handle, int index, const char* label);
             #define GOLDHEN_MENU_API
             #endif
-            EOF
+            GOLDHEN_MENU_EOF
             echo "Created stub goldhen/menu.h"
           fi
           
+          # Create stub input.h if missing
           if [ ! -f /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/input.h ]; then
-            cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/input.h << 'EOF'
+            cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/input.h << 'GOLDHEN_INPUT_EOF'
             #ifndef GOLDHEN_INPUT_H
             #define GOLDHEN_INPUT_H
             #include <stdint.h>
@@ -218,12 +220,13 @@ jobs:
             extern int goldhen_input_get_state(int port, goldhen_input_state_t* state);
             #define GOLDHEN_INPUT_API
             #endif
-            EOF
+            GOLDHEN_INPUT_EOF
             echo "Created stub goldhen/input.h"
           fi
           
+          # Create stub hook.h if missing
           if [ ! -f /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/hook.h ]; then
-            cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/hook.h << 'EOF'
+            cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/hook.h << 'GOLDHEN_HOOK_EOF'
             #ifndef GOLDHEN_HOOK_H
             #define GOLDHEN_HOOK_H
             #include <stdint.h>
@@ -231,19 +234,20 @@ jobs:
             extern int goldhen_hook_remove(void* target);
             #define GOLDHEN_HOOK_API
             #endif
-            EOF
+            GOLDHEN_HOOK_EOF
             echo "Created stub goldhen/hook.h"
           fi
           
+          # Create stub time.h if missing
           if [ ! -f /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/time.h ]; then
-            cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/time.h << 'EOF'
+            cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/time.h << 'GOLDHEN_TIME_EOF'
             #ifndef GOLDHEN_TIME_H
             #define GOLDHEN_TIME_H
             #include <stdint.h>
             extern uint64_t goldhen_time_get_ms(void);
             #define GOLDHEN_TIME_API
             #endif
-            EOF
+            GOLDHEN_TIME_EOF
             echo "Created stub goldhen/time.h"
           fi
           
