@@ -1,4 +1,6 @@
-# .github/workflows/build.yml (FIXED VERSION)
+# .github/workflows/build.yml
+# Complete fixed version - copy/paste entire file
+
 name: Build NFS Heat Drift/Grip Plugin
 
 on:
@@ -29,10 +31,15 @@ jobs:
           tar -xzf toolchain-llvm-18.tar.gz
           mv OpenOrbis-PS4-Toolchain-* openorbis-0.5.4 2>/dev/null || mv OpenOrbis-PS4-Toolchain openorbis-0.5.4 2>/dev/null || true
 
-      - name: Install GoldHEN SDK
+      - name: Install GoldHEN SDK headers
         run: |
-          git clone --depth 1 https://github.com/si-stron/goldhen /tmp/goldhen
-          cp -r /tmp/goldhen/include/* /opt/orbiskate/tools/openorbis-0.5.4/OpenOrbis/PS4Toolchain/include/
+          mkdir -p /opt/orbiskate/tools/openorbis-0.5.4/OpenOrbis/PS4Toolchain/include
+          curl -fL -o /tmp/goldhen_menu.h https://raw.githubusercontent.com/si-stron/goldhen/master/include/goldhen/menu.h
+          curl -fL -o /tmp/goldhen_input.h https://raw.githubusercontent.com/si-stron/goldhen/master/include/goldhen/input.h
+          curl -fL -o /tmp/goldhen_hook.h https://raw.githubusercontent.com/si-stron/goldhen/master/include/goldhen/hook.h
+          curl -fL -o /tmp/goldhen_time.h https://raw.githubusercontent.com/si-stron/goldhen/master/include/goldhen/time.h
+          curl -fL -o /tmp/goldhen_common.h https://raw.githubusercontent.com/si-stron/goldhen/master/include/goldhen/common.h
+          cp /tmp/goldhen_*.h /opt/orbiskate/tools/openorbis-0.5.4/OpenOrbis/PS4Toolchain/include/
 
       - name: Compile plugin
         run: |
