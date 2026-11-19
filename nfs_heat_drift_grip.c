@@ -18,6 +18,15 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdio.h>
+#include <goldhen/menu.h>
+#include <goldhen/input.h>
+#include <goldhen/hook.h>
+#include <goldhen/time.h>
+
+// ============================================================
+// FORWARD DECLARATIONS
+// ============================================================
+static void klog(const char *fmt, ...);
 
 // ============================================================
 // GOLDHEN API IMPLEMENTATIONS (stubs for missing SDK functions)
@@ -109,6 +118,18 @@ int goldhen_hook_remove(void* target) {
 }
 
 // ============================================================
+// LOGGING IMPLEMENTATION
+// ============================================================
+static void klog(const char *fmt, ...) {
+    char buffer[512];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+    sceKernelDebugOutText(0, buffer, strlen(buffer));
+}
+
+// ============================================================
 // CONFIGURATION
 // ============================================================
 #define MOD_BASE_PATH     "/data/GoldHEN/mods/nfs_heat"
@@ -148,15 +169,6 @@ typedef struct {
 #define MAX_INTERCEPTED 64
 static InterceptedFile g_intercepted[MAX_INTERCEPTED];
 static int g_interceptedCount = 0;
-
-static void klog(const char *fmt, ...) {
-    char buffer[512];
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buffer, sizeof(buffer), fmt, args);
-    va_end(args);
-    sceKernelDebugOutText(0, buffer, strlen(buffer));
-}
 
 static bool str_ends_with(const char *str, const char *suffix) {
     size_t slen = strlen(str), suflen = strlen(suffix);
