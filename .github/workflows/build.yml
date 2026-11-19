@@ -1,5 +1,5 @@
 # .github/workflows/build.yml
-# Complete fixed version - handles missing PS4 headers, shows what's available
+# Complete fixed version - generates minimal PS4 SDK headers
 
 name: Build NFS Heat Drift/Grip Plugin
 
@@ -21,7 +21,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang-18 lld-18 curl git ca-certificates findutils
 
-      - name: Download & extract OpenOrbis toolchain (auto-detect structure)
+      - name: Download & extract OpenOrbis toolchain
         run: |
           mkdir -p /opt/orbiskate/tools
           cd /opt/orbiskate/tools
@@ -36,10 +36,8 @@ jobs:
           cp -r "$TOOLCHAIN_ROOT"/* openorbis-0.5.4/
           test -f openorbis-0.5.4/bin/linux/create-fself && echo "create-fself OK"
           test -f openorbis-0.5.4/link.x && echo "link.x OK"
-          echo "=== Include directory structure ==="
-          find openorbis-0.5.4/include -type f -name "*.h" 2>/dev/null | head -30
 
-      - name: Install GoldHEN Plugins SDK (official)
+      - name: Install GoldHEN Plugins SDK
         run: |
           git clone --depth 1 --branch main https://github.com/GoldHEN/GoldHEN_Plugins_SDK.git /opt/orbiskate/tools/goldhen-plugins-sdk
           cp -r /opt/orbiskate/tools/goldhen-plugins-sdk/include/* /opt/orbiskate/tools/openorbis-0.5.4/include/
@@ -47,31 +45,125 @@ jobs:
           cp /opt/orbiskate/tools/goldhen-plugins-sdk/source/Detour.c /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/ 2>/dev/null || true
           cp /opt/orbiskate/tools/goldhen-plugins-sdk/source/HDE64.c /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/ 2>/dev/null || true
 
+      - name: Generate minimal PS4 SDK headers
+        run: |
+          mkdir -p /opt/orbiskate/tools/openorbis-0.5.4/include/ps4
+          
+          # standard.h - basic types
+          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/standard.h << 'EOF'
+          #ifndef PS4_STANDARD_H
+          #define PS4_STANDARD_H
+          #include <stdint.h>
+          #include <stddef.h>
+          #include <stdbool.h>
+          #include <stdio.h>
+          #include <string.h>
+          #include <stdlib.h>
+          typedef int64_t ssize_t;
+          #endif
+          EOF
+
+          # kernel.h - syscalls, process, memory
+          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/kernel.h << 'EOF'
+          #ifndef PS4_KERNEL_H
+          #define PS4_KERNEL_H
+          #include <ps4/standard.h>
+          #define RTLD_DEFAULT ((void*)-1)
+          extern void* sceKernelDlsym(void* handle, const char* name);
+          extern int sceKernelGetProcessId(void);
+          extern int scePthreadCreate(void* thread, void* attr, void* (*start)(void*), void* arg, const char* name);
+          extern int scePthreadDetach(void* thread);
+          extern void sceKernelUsleep(unsigned int useconds);
+          extern void sceKernelDebugOutText(int unk, const char* text, size_t len);
+          #endif
+          EOF
+
+          # module.h - module loading
+          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/module.h << 'EOF'
+          #ifndef PS4_MODULE_H
+          #define PS4_MODULE_H
+          #include <ps4/standard.h>
+          #endif
+          EOF
+
+          # linker.h - dynamic linking
+          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/linker.h << 'EOF'
+          #ifndef PS4_LINKER_H
+          #define PS4_LINKER_H
+          #include <ps4/standard.h>
+          #endif
+          EOF
+
+          # memory.h - memory management
+          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/memory.h << 'EOF'
+          #ifndef PS4_MEMORY_H
+          #define PS4_MEMORY_H
+          #include <ps4/standard.h>
+          extern void* malloc(size_t size);
+          extern void free(void* ptr);
+          extern void* memcpy(void* dest, const void* src, size_t n);
+          extern void* memset(void* s, int c, size_t n);
+          #endif
+          EOF
+
+          # filesystem.h - file I/O
+          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/filesystem.h << 'EOF'
+          #ifndef PS4_FILESYSTEM_H
+          #define PS4_FILESYSTEM_H
+          #include <ps4/standard.h>
+          #include <sys/stat.h>
+          #include <fcntl.h>
+          extern int sceIoOpen(const char* path, int flags, mode_t mode);
+          extern int sceIoClose(int fd);
+          extern ssize_t sceIoRead(int fd, void* buf, size_t nbyte);
+          extern ssize_t sceIoWrite(int fd, const void* buf, size_t nbyte);
+          extern off_t sceIoLseek(int fd, off_t offset, int whence);
+          #define O_RDONLY 0x0000
+          #define O_WRONLY 0x0001
+          #define O_RDWR 0x0002
+          #endif
+          EOF
+
+          # fcntl.h - file control
+          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/fcntl.h << 'EOF'
+          #ifndef PS4_FCNTL_H
+          #define PS4_FCNTL_H
+          #include <ps4/standard.h>
+          #define O_RDONLY 0x0000
+          #define O_WRONLY 0x0001
+          #define O_RDWR 0x0002
+          #define O_CREAT 0x0200
+          #define O_TRUNC 0x0400
+          #define O_APPEND 0x0008
+          #endif
+          EOF
+
+          # errno.h - error codes
+          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/errno.h << 'EOF'
+          #ifndef PS4_ERRNO_H
+          #define PS4_ERRNO_H
+          #include <errno.h>
+          #endif
+          EOF
+
+          # syscall.h - system calls
+          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/syscall.h << 'EOF'
+          #ifndef PS4_SYSCALL_H
+          #define PS4_SYSCALL_H
+          #include <ps4/standard.h>
+          #endif
+          EOF
+
+          echo "Generated PS4 SDK stub headers in /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/"
+          ls -la /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/
+
       - name: Compile plugin
         run: |
           mkdir -p build/obj
-          # Check what headers are available
-          echo "=== Available headers in toolchain ==="
-          find /opt/orbiskate/tools/openorbis-0.5.4/include -type f -name "*.h" 2>/dev/null | head -40
-          
-          # Try to find PS4 headers - if not found, use minimal includes
-          PS4_INCLUDE=""
-          if [ -f /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/standard.h ]; then
-            PS4_INCLUDE="/opt/orbiskate/tools/openorbis-0.5.4/include"
-          elif [ -f /opt/orbiskate/tools/openorbis-0.5.4/include/standard.h ]; then
-            PS4_INCLUDE="/opt/orbiskate/tools/openorbis-0.5.4/include"
-          else
-            echo "WARNING: PS4 SDK headers not found in toolchain"
-            echo "Checking GoldHEN SDK for required types..."
-            PS4_INCLUDE="/opt/orbiskate/tools/openorbis-0.5.4/include"
-          fi
-          echo "Using include: $PS4_INCLUDE"
-          
           clang-18 --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -Wall -Wextra -O2 \
             -isysroot /opt/orbiskate/tools/openorbis-0.5.4 \
             -isystem /opt/orbiskate/tools/openorbis-0.5.4/include \
             -I/opt/orbiskate/tools/openorbis-0.5.4/include \
-            -I"$PS4_INCLUDE" \
             -c nfs_heat_drift_grip.c -o build/obj/nfs_heat_drift_grip.o
 
       - name: Link plugin
