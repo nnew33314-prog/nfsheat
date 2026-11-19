@@ -21,15 +21,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang-18 lld-18 curl git ca-certificates
 
-      - name: Download OpenOrbis toolchain
+      - name: Download & extract OpenOrbis toolchain directly
         run: |
           mkdir -p /opt/orbiskate/tools
           cd /opt/orbiskate/tools
           curl -fL --retry 3 -o toolchain-llvm-18.tar.gz \
             https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz
           echo "3c7cd5bb593ca74fa1c13fd59f3938dc0fc07985167f7275063019e63abe4526  toolchain-llvm-18.tar.gz" | sha256sum -c -
-          tar -xzf toolchain-llvm-18.tar.gz
-          mv OpenOrbis-PS4-Toolchain-* openorbis-0.5.4 2>/dev/null || mv OpenOrbis-PS4-Toolchain openorbis-0.5.4 2>/dev/null || true
+          # Extract directly into openorbis-0.5.4 (strip top-level folder)
+          mkdir -p openorbis-0.5.4
+          tar -xzf toolchain-llvm-18.tar.gz --strip-components=1 -C openorbis-0.5.4
 
       - name: Install GoldHEN Plugins SDK (official)
         run: |
