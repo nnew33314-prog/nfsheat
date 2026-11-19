@@ -31,7 +31,15 @@ jobs:
           tar -xzf toolchain-llvm-18.tar.gz
           mv OpenOrbis-PS4-Toolchain-* openorbis-0.5.4 2>/dev/null || mv OpenOrbis-PS4-Toolchain openorbis-0.5.4 2>/dev/null || true
 
-     git clone --depth 1 --branch master https://github.com/GoldHEN/GoldHEN_Plugins_SDK.git
+      - name: Install GoldHEN Plugins SDK (official)
+        run: |
+          git clone --depth 1 --branch main https://github.com/GoldHEN/GoldHEN_Plugins_SDK.git /opt/orbiskate/tools/goldhen-plugins-sdk
+          # Copy headers to toolchain include
+          cp -r /opt/orbiskate/tools/goldhen-plugins-sdk/include/* /opt/orbiskate/tools/openorbis-0.5.4/OpenOrbis/PS4Toolchain/include/
+          # Copy Detour/HDE64 source for hooking (orbiskate uses these)
+          mkdir -p /opt/orbiskate/tools/openorbis-0.5.4/OpenOrbis/PS4Toolchain/include/goldhen
+          cp /opt/orbiskate/tools/goldhen-plugins-sdk/source/Detour.c /opt/orbiskate/tools/openorbis-0.5.4/OpenOrbis/PS4Toolchain/include/goldhen/ 2>/dev/null || true
+          cp /opt/orbiskate/tools/goldhen-plugins-sdk/source/HDE64.c /opt/orbiskate/tools/openorbis-0.5.4/OpenOrbis/PS4Toolchain/include/goldhen/ 2>/dev/null || true
 
       - name: Compile plugin
         run: |
