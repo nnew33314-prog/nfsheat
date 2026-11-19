@@ -9,6 +9,8 @@ jobs:
   build:
     name: Compile .prx
     runs-on: ubuntu-latest
+    env:
+      OO_PS4_TOOLCHAIN: /opt/orbiskate/tools/openorbis-0.5.4
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -185,8 +187,6 @@ jobs:
             build/obj/nfs_heat_drift_grip.o -o build/nfs_heat_drift_grip.elf
 
       - name: Create .prx
-        env:
-          OO_PS4_TOOLCHAIN: /opt/orbiskate/tools/openorbis-0.5.4
         run: |
           $OO_PS4_TOOLCHAIN/bin/linux/create-fself \
             -in=build/nfs_heat_drift_grip.elf \
