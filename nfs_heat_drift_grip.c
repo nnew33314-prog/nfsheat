@@ -55,12 +55,8 @@ int sceKernelGetProcessId(void) {
 int sceCtrlPeekBufferPositive(int port, SceCtrlData* data, int count) {
     (void)port;
     if (data && count > 0) {
-        // Zero out - plugin will read via direct syscall if needed
+        // Zero out - header only defines 'buttons' member
         data->buttons = 0;
-        data->lx = 0;
-        data->ly = 0;
-        data->rx = 0;
-        data->ry = 0;
     }
     return 0;
 }
