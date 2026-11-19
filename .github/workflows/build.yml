@@ -1,5 +1,5 @@
 # .github/workflows/build.yml
-# Complete fixed version - finds toolchain wherever it extracts
+# Complete fixed version - auto-finds PS4 SDK headers
 
 name: Build NFS Heat Drift/Grip Plugin
 
@@ -28,28 +28,20 @@ jobs:
           curl -fL --retry 3 -o toolchain-llvm-18.tar.gz \
             https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz
           echo "3c7cd5bb593ca74fa1c13fd59f3938dc0fc07985167f7275063019e63abe4526  toolchain-llvm-18.tar.gz" | sha256sum -c -
-          # Extract to temp, then find actual PS4Toolchain
           mkdir -p tmp_extract
           tar -xzf toolchain-llvm-18.tar.gz -C tmp_extract
-          echo "=== Extracted structure ==="
-          find tmp_extract -type f -name "clang*" -o -name "ld.lld*" -o -name "create-fself*" | head -20
-          # Find the PS4Toolchain root (contains bin/, include/, lib/, link.x)
           TOOLCHAIN_ROOT=$(find tmp_extract -name "link.x" -type f | head -1 | xargs dirname)
           echo "Found toolchain at: $TOOLCHAIN_ROOT"
-          # Move to standard location
           mkdir -p openorbis-0.5.4
           cp -r "$TOOLCHAIN_ROOT"/* openorbis-0.5.4/
-          # Verify
-          ls -la openorbis-0.5.4/
           test -f openorbis-0.5.4/bin/linux/create-fself && echo "create-fself OK"
           test -f openorbis-0.5.4/link.x && echo "link.x OK"
+          find openorbis-0.5.4 -name "standard.h" -type f 2>/dev/null | head -5
 
       - name: Install GoldHEN Plugins SDK (official)
         run: |
           git clone --depth 1 --branch main https://github.com/GoldHEN/GoldHEN_Plugins_SDK.git /opt/orbiskate/tools/goldhen-plugins-sdk
-          # Copy headers to toolchain include
           cp -r /opt/orbiskate/tools/goldhen-plugins-sdk/include/* /opt/orbiskate/tools/openorbis-0.5.4/include/
-          # Copy Detour/HDE64 source for hooking
           mkdir -p /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen
           cp /opt/orbiskate/tools/goldhen-plugins-sdk/source/Detour.c /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/ 2>/dev/null || true
           cp /opt/orbiskate/tools/goldhen-plugins-sdk/source/HDE64.c /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/ 2>/dev/null || true
@@ -57,10 +49,14 @@ jobs:
       - name: Compile plugin
         run: |
           mkdir -p build/obj
+          # Auto-find PS4 SDK headers (wherever standard.h lives)
+          PS4_INCLUDE=$(find /opt/orbiskate/tools/openorbis-0.5.4 -name "standard.h" -type f 2>/dev/null | head -1 | xargs dirname)
+          echo "PS4 headers at: $PS4_INCLUDE"
           clang-18 --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -Wall -Wextra -O2 \
             -isysroot /opt/orbiskate/tools/openorbis-0.5.4 \
             -isystem /opt/orbiskate/tools/openorbis-0.5.4/include \
             -I/opt/orbiskate/tools/openorbis-0.5.4/include \
+            -I"$PS4_INCLUDE" \
             -c nfs_heat_drift_grip.c -o build/obj/nfs_heat_drift_grip.o
 
       - name: Link plugin
