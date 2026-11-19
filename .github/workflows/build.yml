@@ -51,7 +51,7 @@ jobs:
         run: |
           mkdir -p _deps/plugins/bin/plugins/prx_final _deps/plugins/bin/plugins/elf_final _deps/plugins/plugin_src
           cp -r nfs_heat_drift_grip _deps/plugins/plugin_src/
-          cp _deps/plugins/plugin_common.h _deps/plugins/plugin_src/nfs_heat_drift_grip/
+          cp _deps/plugins/common/plugin_common.h _deps/plugins/plugin_src/nfs_heat_drift_grip/
           cd _deps/plugins
           make -C plugin_src/nfs_heat_drift_grip DEBUG=0
           ls -la bin/plugins/prx_final/
@@ -63,3 +63,4 @@ jobs:
           path: _deps/plugins/bin/plugins/prx_final/nfs_heat_drift_grip.prx
           if-no-files-found: error
           retention-days: 30
+
