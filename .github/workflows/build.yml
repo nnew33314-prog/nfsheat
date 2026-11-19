@@ -49,8 +49,9 @@ jobs:
 
       - name: Build plugin
         run: |
-          mkdir -p _deps/plugins/bin/plugins/prx_final _deps/plugins/bin/plugins/elf_final
+          mkdir -p _deps/plugins/bin/plugins/prx_final _deps/plugins/bin/plugins/elf_final _deps/plugins/plugin_src
           cp -r nfs_heat_drift_grip _deps/plugins/plugin_src/
+          cp _deps/plugins/plugin_common.h _deps/plugins/plugin_src/nfs_heat_drift_grip/
           cd _deps/plugins
           make -C plugin_src/nfs_heat_drift_grip DEBUG=0
           ls -la bin/plugins/prx_final/
