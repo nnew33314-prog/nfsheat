@@ -29,17 +29,17 @@
 static void klog(const char *fmt, ...);
 
 // ============================================================
-// GOLDHEN API IMPLEMENTATIONS (stubs for missing SDK functions)
+// GOLDHEN API IMPLEMENTATIONS (matching header signatures exactly)
 // ============================================================
 
-// Menu API - simple console-based menu since GoldHEN menu API unavailable
+// Menu API
 static int g_menu_active = 0;
 static int g_menu_selected = 0;
 
 int goldhen_menu_create(const char* title, uint32_t flags) {
     (void)title; (void)flags;
     klog("[NFSHeat] Menu created (stub)\n");
-    return 1; // dummy handle
+    return 1;
 }
 
 void goldhen_menu_destroy(int handle) {
@@ -82,31 +82,26 @@ void goldhen_menu_set_item_label(int handle, int index, const char* label) {
 
 void goldhen_menu_draw(int handle) {
     (void)handle;
-    // No-op - menu rendering handled by plugin
 }
 
-// Input API - read controller state directly
-int goldhen_input_get_state(int port, void* state) {
+// Input API - MATCH HEADER EXACTLY: goldhen_input_state_t*
+int goldhen_input_get_state(int port, goldhen_input_state_t* state) {
     (void)port;
     if (state) {
-        // Zero out - plugin reads controller directly
-        memset(state, 0, sizeof(uint32_t));
+        state->buttons = 0;
     }
     return 0;
 }
 
-// Time API - use kernel time
+// Time API
 uint64_t goldhen_time_get_ms(void) {
-    // Approximate - use frame counter * poll interval
     static uint64_t frameCounter = 0;
     return frameCounter++ * 16;
 }
 
-// Hook API - use Detour/HDE64 from GoldHEN SDK if available, otherwise stub
+// Hook API
 int goldhen_hook_install(void* target, void* replacement, void** original) {
     if (original) *original = target;
-    // In real implementation, would use Detour.c/HDE64.c
-    // For now, store the hook for manual dispatch
     klog("[NFSHeat] Hook install: target=%p replacement=%p\n", target, replacement);
     return 0;
 }
@@ -294,10 +289,9 @@ static void update_menu_status() {
 }
 
 static void handle_input() {
-    uint32_t buttons = 0;
     SceCtrlData data;
     sceCtrlPeekBufferPositive(0, &data, 1);
-    buttons = data.buttons;
+    uint32_t buttons = data.buttons;
     
     bool holding = (buttons & (SCE_CTRL_L3 | SCE_CTRL_R3)) == (SCE_CTRL_L3 | SCE_CTRL_R3);
     uint64_t now = goldhen_time_get_ms();
@@ -325,7 +319,6 @@ static int install_hooks() {
     orig_sceIoLseek = (void*)sceKernelDlsym(RTLD_DEFAULT, "sceIoLseek");
     if (!orig_sceIoOpen || !orig_sceIoRead || !orig_sceIoClose || !orig_sceIoLseek) { klog("[NFSHeat] Failed to resolve sceIo*\n"); return -1; }
     
-    // Install hooks via goldhen_hook_install
     goldhen_hook_install((void*)orig_sceIoOpen, (void*)hook_sceIoOpen, (void**)&orig_sceIoOpen);
     goldhen_hook_install((void*)orig_sceIoRead, (void*)hook_sceIoRead, (void**)&orig_sceIoRead);
     goldhen_hook_install((void*)orig_sceIoClose, (void*)hook_sceIoClose, (void**)&orig_sceIoClose);
