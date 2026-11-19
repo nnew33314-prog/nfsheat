@@ -1,0 +1,41 @@
+name: Build NFS Heat Drift/Grip Plugin
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # Manual trigger from Actions tab
+
+jobs:
+  build:
+    name: Compile .prx
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/openorbital/orbital:latest  # Official PS4 SDK (same as orbiskate)
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install GoldHEN SDK headers
+        run: |
+          git clone --depth 1 https://github.com/si-stron/goldhen /tmp/goldhen
+          cp -r /tmp/goldhen/include/* /opt/orbiskate/tools/goldhen-plugins-sdk/include/
+
+      - name: Compile plugin
+        run: |
+          mkdir -p build/obj
+          clang-18 --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -Wall -Wextra -O2             -isysroot /opt/orbiskate/tools/openorbis-0.5.4/OpenOrbis/PS4Toolchain             -isystem /opt/orbiskate/tools/openorbis-0.5.4/OpenOrbis/PS4Toolchain/include             -I/opt/orbiskate/tools/goldhen-plugins-sdk/include             -c nfs_heat_drift_grip.c -o build/obj/nfs_heat_drift_grip.o
+
+      - name: Link plugin
+        run: |
+          ld.lld-18 -m elf_x86_64 -pie             --script /opt/orbiskate/tools/openorbis-0.5.4/OpenOrbis/PS4Toolchain/link.x             -e _init --eh-frame-hdr             -L/opt/orbiskate/tools/openorbis-0.5.4/OpenOrbis/PS4Toolchain/lib             -lSceLibcInternal -lkernel -lSceUserService -lSceSysmodule             build/obj/nfs_heat_drift_grip.o -o build/nfs_heat_drift_grip.elf
+
+      - name: Create .prx
+        run: |
+          /opt/orbiskate/tools/openorbis-0.5.4/OpenOrbis/PS4Toolchain/bin/linux/create-fself             -in=build/nfs_heat_drift_grip.elf             -out=build/nfs_heat_drift_grip.oelf             --lib=build/nfs_heat_drift_grip.prx             --paid=0x3800000000000011
+
+      - name: Upload .prx artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nfs_heat_drift_grip.prx
+          path: build/nfs_heat_drift_grip.prx
+          retention-days: 7
