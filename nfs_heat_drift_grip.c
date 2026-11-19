@@ -2,8 +2,8 @@
 // GoldHEN plugin for NFS Heat - Drift/Grip handling bucket selector
 // Hooks Frostbite bundle loader to serve custom tuning EBX
 // In-game menu: HOLD L3+R3 for 3 seconds to open
-// COMPILE: Uses GitHub Actions with openorbital/orbital image
 
+#include <stdarg.h>
 #include <ps4/standard.h>
 #include <ps4/kernel.h>
 #include <ps4/module.h>
@@ -13,9 +13,19 @@
 #include <ps4/fcntl.h>
 #include <ps4/errno.h>
 #include <ps4/syscall.h>
+#include <ps4/pthread.h>
+#include <ps4/ctrl.h>
 #include <stddef.h>
 #include <string.h>
 #include <stdio.h>
+#include <goldhen/menu.h>
+#include <goldhen/input.h>
+#include <goldhen/hook.h>
+ 
+/* Stub goldhen_menu_draw if GoldHEN menu API not available */
+#ifndef GOLDHEN_MENU_API
+static inline void goldhen_menu_draw(void *h) { (void)h; }
+#endif
 
 // ============================================================
 // CONFIGURATION
@@ -85,7 +95,7 @@ static void build_mod_path(char *out, size_t outSize, const char *originalPath, 
 }
 
 static bool is_tuning_asset(const char *path) {
-    return (str_contains(path, "vehicles/tuning/") || str_contains(path, "vehicles\\tuning\\")) && str_ends_with(path, ".ebx");
+    return (str_contains(path, "vehicles/tuning/") || str_contains(path, "vehicles\\tuning")) && str_ends_with(path, ".ebx");
 }
 
 static int find_intercepted_slot() {
@@ -181,7 +191,7 @@ static void init_menu() {
     goldhen_menu_add_item(g_menuHandle, statusBuf, -1, NULL);
     goldhen_menu_add_separator(g_menuHandle);
     goldhen_menu_add_item(g_menuHandle, "Hold L3+R3 (3s) to open", -1, NULL);
-    goldhen_menu_add_item(g_menuHandle, "v" PLUGIN_VERSION "  |  D-Pad: Navigate  Cross:Select", -1, NULL);
+    goldhen_menu_add_item(g_menuHandle, "D-Pad: Navigate  Cross:Select  Circle:Close", -1, NULL);
     goldhen_menu_set_hotkey(g_menuHandle, 0);
     #endif
 }
@@ -249,13 +259,14 @@ static void remove_hooks() {
     #endif
 }
 
-static int plugin_thread(void *arg) {
+static void *plugin_thread(void *arg) {
+    (void)arg;
     klog("[NFSHeat] Plugin thread started\n");
     while (1) { int pid = sceKernelGetProcessId(); if (pid > 0) break; sceKernelUsleep(100000); }
-    if (install_hooks() < 0) return -1; init_menu();
+    if (install_hooks() < 0) return NULL; init_menu();
     g_pluginActive = true; klog("[NFSHeat] Plugin active - HOLD L3+R3 for 3s to open menu\n");
-    while (g_pluginActive) { handle_input(); #ifdef GOLDHEN_MENU_API if (g_menuOpen) goldhen_menu_draw(g_menuHandle); #endif sceKernelUsleep(MENU_POLL_MS * 1000); }
-    remove_hooks(); klog("[NFSHeat] Plugin stopped\n"); return 0;
+    while (g_pluginActive) { handle_input(); if (g_menuOpen) goldhen_menu_draw(g_menuHandle); sceKernelUsleep(MENU_POLL_MS * 1000); }
+    remove_hooks(); klog("[NFSHeat] Plugin stopped\n"); return NULL;
 }
 
 int _start() {
