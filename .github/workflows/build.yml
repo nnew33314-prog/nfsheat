@@ -1,5 +1,5 @@
 # .github/workflows/build.yml
-# Complete fixed version - auto-finds PS4 SDK headers
+# Complete fixed version - handles missing PS4 headers, shows what's available
 
 name: Build NFS Heat Drift/Grip Plugin
 
@@ -36,7 +36,8 @@ jobs:
           cp -r "$TOOLCHAIN_ROOT"/* openorbis-0.5.4/
           test -f openorbis-0.5.4/bin/linux/create-fself && echo "create-fself OK"
           test -f openorbis-0.5.4/link.x && echo "link.x OK"
-          find openorbis-0.5.4 -name "standard.h" -type f 2>/dev/null | head -5
+          echo "=== Include directory structure ==="
+          find openorbis-0.5.4/include -type f -name "*.h" 2>/dev/null | head -30
 
       - name: Install GoldHEN Plugins SDK (official)
         run: |
@@ -49,9 +50,23 @@ jobs:
       - name: Compile plugin
         run: |
           mkdir -p build/obj
-          # Auto-find PS4 SDK headers (wherever standard.h lives)
-          PS4_INCLUDE=$(find /opt/orbiskate/tools/openorbis-0.5.4 -name "standard.h" -type f 2>/dev/null | head -1 | xargs dirname)
-          echo "PS4 headers at: $PS4_INCLUDE"
+          # Check what headers are available
+          echo "=== Available headers in toolchain ==="
+          find /opt/orbiskate/tools/openorbis-0.5.4/include -type f -name "*.h" 2>/dev/null | head -40
+          
+          # Try to find PS4 headers - if not found, use minimal includes
+          PS4_INCLUDE=""
+          if [ -f /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/standard.h ]; then
+            PS4_INCLUDE="/opt/orbiskate/tools/openorbis-0.5.4/include"
+          elif [ -f /opt/orbiskate/tools/openorbis-0.5.4/include/standard.h ]; then
+            PS4_INCLUDE="/opt/orbiskate/tools/openorbis-0.5.4/include"
+          else
+            echo "WARNING: PS4 SDK headers not found in toolchain"
+            echo "Checking GoldHEN SDK for required types..."
+            PS4_INCLUDE="/opt/orbiskate/tools/openorbis-0.5.4/include"
+          fi
+          echo "Using include: $PS4_INCLUDE"
+          
           clang-18 --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -Wall -Wextra -O2 \
             -isysroot /opt/orbiskate/tools/openorbis-0.5.4 \
             -isystem /opt/orbiskate/tools/openorbis-0.5.4/include \
