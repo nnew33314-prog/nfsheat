@@ -329,19 +329,15 @@ static void draw_item(Canvas* c, int idx, int y, const char* text, int fg, int b
 static void draw_main_menu(Canvas* c) {
     draw_panel(c, 0, 0, VOV_W, 256, C_INK, 1);
     
-    // Title bar
     rect(c, 4, 4, VOV_W - 8, 28, C_INK);
     draw_text(c, "NFS HEAT DRIFT/GRIP", 16, 10, C_CREAM, -1);
     draw_text(c, "v1.0", 440, 10, C_GREY, -1);
     
-    // Current bucket
     draw_text(c, "ACTIVE:", 16, 40, C_INK, -1);
     draw_text(c, bucket_name(g_bucket), 16, 54, C_BLUE, -1);
     
-    // Separator
     rect(c, 12, 70, VOV_W - 24, 1, C_GREY);
     
-    // Menu items
     draw_text(c, "SELECT HANDLING:", 16, 78, C_INK, -1);
     const char* items[] = {"STREET - UNITE Simcade", "DRIFT - Hayeduce 3.3.2", "RACE - UNITE Grip", "OPTIONS"};
     for (int i = 0; i < 4; i++) {
@@ -349,7 +345,6 @@ static void draw_main_menu(Canvas* c) {
         draw_item(c, i, y, items[i], C_INK, C_CREAM, g_selected == i);
     }
     
-    // Hints
     draw_text(c, "D-PAD: NAVIGATE  CROSS: SELECT  CIRCLE: BACK/CLOSE", 16, 200, C_GREY, -1);
     draw_text(c, "HOLD L3+R3 (3s) TO TOGGLE", 16, 214, C_ORANGE, -1);
     
