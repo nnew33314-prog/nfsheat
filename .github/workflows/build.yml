@@ -1,5 +1,5 @@
 # .github/workflows/build.yml
-# No problematic heredocs - copies committed GoldHEN stub headers
+# GoldHEN headers generated inline via printf - no heredoc issues
 
 name: Build NFS Heat Drift/Grip Plugin
 
@@ -45,10 +45,66 @@ jobs:
           cp /opt/orbiskate/tools/goldhen-plugins-sdk/source/Detour.c /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/ 2>/dev/null || true
           cp /opt/orbiskate/tools/goldhen-plugins-sdk/source/HDE64.c /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/ 2>/dev/null || true
 
-      - name: Copy committed GoldHEN stub headers
+      - name: Generate GoldHEN stub headers (unique delimiters)
         run: |
-          cp -r include/goldhen/* /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/
-          echo "=== GoldHEN headers installed ==="
+          mkdir -p /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen
+          
+          # menu.h
+          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/menu.h << 'END_MENU_H'
+#ifndef GOLDHEN_MENU_H
+#define GOLDHEN_MENU_H
+#include <stdint.h>
+#include <stdbool.h>
+#define GOLDHEN_MENU_FLAG_CENTERED  (1u << 0)
+#define GOLDHEN_MENU_FLAG_BACKDROP  (1u << 1)
+typedef struct goldhen_menu goldhen_menu_t;
+typedef void (*goldhen_menu_callback_t)(int);
+extern int goldhen_menu_create(const char* title, uint32_t flags);
+extern void goldhen_menu_destroy(int handle);
+extern void goldhen_menu_add_item(int handle, const char* label, int value, goldhen_menu_callback_t cb);
+extern void goldhen_menu_add_separator(int handle);
+extern void goldhen_menu_set_visible(int handle, bool visible);
+extern void goldhen_menu_set_hotkey(int handle, uint32_t key);
+extern void goldhen_menu_navigate(int handle, int direction);
+extern void goldhen_menu_select(int handle);
+extern void goldhen_menu_set_item_label(int handle, int index, const char* label);
+#define GOLDHEN_MENU_API
+#endif
+END_MENU_H
+          
+          # input.h
+          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/input.h << 'END_INPUT_H'
+#ifndef GOLDHEN_INPUT_H
+#define GOLDHEN_INPUT_H
+#include <stdint.h>
+typedef struct { uint32_t buttons; } goldhen_input_state_t;
+extern int goldhen_input_get_state(int port, goldhen_input_state_t* state);
+#define GOLDHEN_INPUT_API
+#endif
+END_INPUT_H
+          
+          # hook.h
+          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/hook.h << 'END_HOOK_H'
+#ifndef GOLDHEN_HOOK_H
+#define GOLDHEN_HOOK_H
+#include <stdint.h>
+extern int goldhen_hook_install(void* target, void* replacement, void** original);
+extern int goldhen_hook_remove(void* target);
+#define GOLDHEN_HOOK_API
+#endif
+END_HOOK_H
+          
+          # time.h
+          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/time.h << 'END_TIME_H'
+#ifndef GOLDHEN_TIME_H
+#define GOLDHEN_TIME_H
+#include <stdint.h>
+extern uint64_t goldhen_time_get_ms(void);
+#define GOLDHEN_TIME_API
+#endif
+END_TIME_H
+          
+          echo "=== GoldHEN headers generated ==="
           ls -la /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/
 
       - name: Generate minimal PS4 SDK headers (no duplicates)
