@@ -42,7 +42,7 @@ jobs:
           # Verify
           ls -la openorbis-0.5.4/
           test -f openorbis-0.5.4/bin/linux/create-fself && echo "create-fself OK"
-          test -f openorbis-0.5.4/include/link.x && echo "link.x OK"
+          test -f openorbis-0.5.4/link.x && echo "link.x OK"
 
       - name: Install GoldHEN Plugins SDK (official)
         run: |
