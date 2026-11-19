@@ -1,5 +1,5 @@
 # .github/workflows/build.yml
-# GoldHEN headers generated inline via printf - no heredoc issues
+# GoldHEN headers generated via Python - no heredoc/YAML issues
 
 name: Build NFS Heat Drift/Grip Plugin
 
@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-18 lld-18 curl git ca-certificates findutils
+          sudo apt-get install -y clang-18 lld-18 curl git ca-certificates findutils python3
 
       - name: Download & extract OpenOrbis toolchain
         run: |
@@ -45,13 +45,11 @@ jobs:
           cp /opt/orbiskate/tools/goldhen-plugins-sdk/source/Detour.c /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/ 2>/dev/null || true
           cp /opt/orbiskate/tools/goldhen-plugins-sdk/source/HDE64.c /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/ 2>/dev/null || true
 
-      - name: Generate GoldHEN stub headers (unique delimiters)
+      - name: Generate GoldHEN stub headers via Python
         run: |
-          mkdir -p /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen
-          
-          # menu.h
-          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/menu.h << 'END_MENU_H'
-#ifndef GOLDHEN_MENU_H
+          python3 << 'PYEOF'
+          headers = {
+              'menu.h': '''#ifndef GOLDHEN_MENU_H
 #define GOLDHEN_MENU_H
 #include <stdint.h>
 #include <stdbool.h>
@@ -69,43 +67,38 @@ extern void goldhen_menu_navigate(int handle, int direction);
 extern void goldhen_menu_select(int handle);
 extern void goldhen_menu_set_item_label(int handle, int index, const char* label);
 #define GOLDHEN_MENU_API
-#endif
-END_MENU_H
-          
-          # input.h
-          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/input.h << 'END_INPUT_H'
-#ifndef GOLDHEN_INPUT_H
+#endif''',
+              'input.h': '''#ifndef GOLDHEN_INPUT_H
 #define GOLDHEN_INPUT_H
 #include <stdint.h>
 typedef struct { uint32_t buttons; } goldhen_input_state_t;
 extern int goldhen_input_get_state(int port, goldhen_input_state_t* state);
 #define GOLDHEN_INPUT_API
-#endif
-END_INPUT_H
-          
-          # hook.h
-          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/hook.h << 'END_HOOK_H'
-#ifndef GOLDHEN_HOOK_H
+#endif''',
+              'hook.h': '''#ifndef GOLDHEN_HOOK_H
 #define GOLDHEN_HOOK_H
 #include <stdint.h>
 extern int goldhen_hook_install(void* target, void* replacement, void** original);
 extern int goldhen_hook_remove(void* target);
 #define GOLDHEN_HOOK_API
-#endif
-END_HOOK_H
-          
-          # time.h
-          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/time.h << 'END_TIME_H'
-#ifndef GOLDHEN_TIME_H
+#endif''',
+              'time.h': '''#ifndef GOLDHEN_TIME_H
 #define GOLDHEN_TIME_H
 #include <stdint.h>
 extern uint64_t goldhen_time_get_ms(void);
 #define GOLDHEN_TIME_API
-#endif
-END_TIME_H
-          
-          echo "=== GoldHEN headers generated ==="
-          ls -la /opt/orbiskate/tools/openorbis-0.5.4/include/goldhen/
+#endif'''
+          }
+          import os
+          outdir = '/opt/orbiskate/tools/openorbis-0.5.4/include/goldhen'
+          os.makedirs(outdir, exist_ok=True)
+          for name, content in headers.items():
+              with open(os.path.join(outdir, name), 'w') as f:
+                  f.write(content)
+          print("=== GoldHEN headers generated ===")
+          for name in headers:
+              print(f"  {name}")
+          PYEOF
 
       - name: Generate minimal PS4 SDK headers (no duplicates)
         run: |
