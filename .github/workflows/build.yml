@@ -1,3 +1,4 @@
+# .github/workflows/build.yml
 name: Build NFS Heat Drift/Grip Plugin
 
 on:
@@ -5,12 +6,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
+env:
+  T: /opt/orbiskate/tools/openorbis-0.5.4
+  OO_PS4_TOOLCHAIN: /opt/orbiskate/tools/openorbis-0.5.4
+
 jobs:
   build:
     name: Compile .prx
     runs-on: ubuntu-latest
-    env:
-      OO_PS4_TOOLCHAIN: /opt/orbiskate/tools/openorbis-0.5.4
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -20,7 +23,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang-18 lld-18 curl git ca-certificates findutils
 
-      - name: Download & extract OpenOrbis toolchain
+      - name: Download and extract OpenOrbis toolchain
         run: |
           mkdir -p /opt/orbiskate/tools
           cd /opt/orbiskate/tools
@@ -35,12 +38,75 @@ jobs:
           cp -r "$TOOLCHAIN_ROOT"/* openorbis-0.5.4/
           test -f openorbis-0.5.4/bin/linux/create-fself && echo "create-fself OK"
           test -f openorbis-0.5.4/link.x && echo "link.x OK"
-          ls -la openorbis-0.5.4/lib/ | head -20
+          echo "--- lib dir (crt/libs) ---"
+          ls openorbis-0.5.4/lib | grep -iE "crt|libkernel|SceLibc|SceUser|SceSysmodule" || true
 
-      - name: Generate PS4 SDK headers
+      - name: Install GoldHEN Plugins SDK
         run: |
-          mkdir -p /opt/orbiskate/tools/openorbis-0.5.4/include/ps4
-          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/standard.h << 'EOF'
+          git clone --depth 1 --branch main https://github.com/GoldHEN/GoldHEN_Plugins_SDK.git /opt/orbiskate/tools/goldhen-plugins-sdk
+          cp -r /opt/orbiskate/tools/goldhen-plugins-sdk/include/* $T/include/ 2>/dev/null || true
+          mkdir -p $T/include/goldhen
+          cp /opt/orbiskate/tools/goldhen-plugins-sdk/source/Detour.c $T/include/goldhen/ 2>/dev/null || true
+          cp /opt/orbiskate/tools/goldhen-plugins-sdk/source/HDE64.c $T/include/goldhen/ 2>/dev/null || true
+
+      - name: Generate GoldHEN stub headers
+        run: |
+          D=$T/include/goldhen
+          mkdir -p $D
+          cat > $D/menu.h << 'EOF'
+          #ifndef GOLDHEN_MENU_H
+          #define GOLDHEN_MENU_H
+          #include <stdint.h>
+          #include <stdbool.h>
+          #define GOLDHEN_MENU_FLAG_CENTERED  (1u << 0)
+          #define GOLDHEN_MENU_FLAG_BACKDROP  (1u << 1)
+          typedef void (*goldhen_menu_callback_t)(int);
+          extern int goldhen_menu_create(const char* title, uint32_t flags);
+          extern void goldhen_menu_destroy(int handle);
+          extern void goldhen_menu_add_item(int handle, const char* label, int value, goldhen_menu_callback_t cb);
+          extern void goldhen_menu_add_separator(int handle);
+          extern void goldhen_menu_set_visible(int handle, bool visible);
+          extern void goldhen_menu_set_hotkey(int handle, uint32_t key);
+          extern void goldhen_menu_navigate(int handle, int direction);
+          extern void goldhen_menu_select(int handle);
+          extern void goldhen_menu_set_item_label(int handle, int index, const char* label);
+          extern void goldhen_menu_draw(int handle);
+          #define GOLDHEN_MENU_API
+          #endif
+          EOF
+          cat > $D/input.h << 'EOF'
+          #ifndef GOLDHEN_INPUT_H
+          #define GOLDHEN_INPUT_H
+          #include <stdint.h>
+          typedef struct { uint32_t buttons; } goldhen_input_state_t;
+          extern int goldhen_input_get_state(int port, goldhen_input_state_t* state);
+          #define GOLDHEN_INPUT_API
+          #endif
+          EOF
+          cat > $D/hook.h << 'EOF'
+          #ifndef GOLDHEN_HOOK_H
+          #define GOLDHEN_HOOK_H
+          #include <stdint.h>
+          extern int goldhen_hook_install(void* target, void* replacement, void** original);
+          extern int goldhen_hook_remove(void* target);
+          #define GOLDHEN_HOOK_API
+          #endif
+          EOF
+          cat > $D/time.h << 'EOF'
+          #ifndef GOLDHEN_TIME_H
+          #define GOLDHEN_TIME_H
+          #include <stdint.h>
+          extern uint64_t goldhen_time_get_ms(void);
+          #define GOLDHEN_TIME_API
+          #endif
+          EOF
+          ls -la $D
+
+      - name: Generate minimal PS4 SDK headers
+        run: |
+          P=$T/include/ps4
+          mkdir -p $P
+          cat > $P/standard.h << 'EOF'
           #ifndef PS4_STANDARD_H
           #define PS4_STANDARD_H
           #include <stdint.h>
@@ -52,8 +118,7 @@ jobs:
           #include <stdarg.h>
           #endif
           EOF
-
-          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/kernel.h << 'EOF'
+          cat > $P/kernel.h << 'EOF'
           #ifndef PS4_KERNEL_H
           #define PS4_KERNEL_H
           #include <ps4/standard.h>
@@ -64,33 +129,25 @@ jobs:
           extern void sceKernelDebugOutText(int unk, const char* text, size_t len);
           #endif
           EOF
-
-          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/module.h << 'EOF'
+          cat > $P/module.h << 'EOF'
           #ifndef PS4_MODULE_H
           #define PS4_MODULE_H
           #include <ps4/standard.h>
           #endif
           EOF
-
-          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/linker.h << 'EOF'
+          cat > $P/linker.h << 'EOF'
           #ifndef PS4_LINKER_H
           #define PS4_LINKER_H
           #include <ps4/standard.h>
           #endif
           EOF
-
-          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/memory.h << 'EOF'
+          cat > $P/memory.h << 'EOF'
           #ifndef PS4_MEMORY_H
           #define PS4_MEMORY_H
           #include <ps4/standard.h>
-          extern void* malloc(size_t size);
-          extern void free(void* ptr);
-          extern void* memcpy(void* dest, const void* src, size_t n);
-          extern void* memset(void* s, int c, size_t n);
           #endif
           EOF
-
-          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/filesystem.h << 'EOF'
+          cat > $P/filesystem.h << 'EOF'
           #ifndef PS4_FILESYSTEM_H
           #define PS4_FILESYSTEM_H
           #include <ps4/standard.h>
@@ -102,43 +159,28 @@ jobs:
           extern ssize_t sceIoWrite(int fd, const void* buf, size_t nbyte);
           extern off_t sceIoLseek(int fd, off_t offset, int whence);
           extern int sceIoMkdir(const char* path, mode_t mode);
-          #define O_RDONLY 0x0000
-          #define O_WRONLY 0x0001
-          #define O_RDWR 0x0002
-          #define O_CREAT 0x0200
-          #define O_TRUNC 0x0400
-          #define O_APPEND 0x0008
           #endif
           EOF
-
-          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/fcntl.h << 'EOF'
+          cat > $P/fcntl.h << 'EOF'
           #ifndef PS4_FCNTL_H
           #define PS4_FCNTL_H
           #include <ps4/standard.h>
-          #define O_RDONLY 0x0000
-          #define O_WRONLY 0x0001
-          #define O_RDWR 0x0002
-          #define O_CREAT 0x0200
-          #define O_TRUNC 0x0400
-          #define O_APPEND 0x0008
+          #include <fcntl.h>
           #endif
           EOF
-
-          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/errno.h << 'EOF'
+          cat > $P/errno.h << 'EOF'
           #ifndef PS4_ERRNO_H
           #define PS4_ERRNO_H
           #include <errno.h>
           #endif
           EOF
-
-          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/syscall.h << 'EOF'
+          cat > $P/syscall.h << 'EOF'
           #ifndef PS4_SYSCALL_H
           #define PS4_SYSCALL_H
           #include <ps4/standard.h>
           #endif
           EOF
-
-          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/pthread.h << 'EOF'
+          cat > $P/pthread.h << 'EOF'
           #ifndef PS4_PTHREAD_H
           #define PS4_PTHREAD_H
           #include <ps4/standard.h>
@@ -148,8 +190,7 @@ jobs:
           extern int scePthreadDetach(ScePthread thread);
           #endif
           EOF
-
-          cat > /opt/orbiskate/tools/openorbis-0.5.4/include/ps4/ctrl.h << 'EOF'
+          cat > $P/ctrl.h << 'EOF'
           #ifndef PS4_CTRL_H
           #define PS4_CTRL_H
           #include <ps4/standard.h>
@@ -165,43 +206,42 @@ jobs:
           extern int sceCtrlPeekBufferPositive(int port, SceCtrlData* data, int count);
           #endif
           EOF
-
           echo "Generated PS4 SDK stub headers"
 
       - name: Compile plugin
         run: |
           mkdir -p build/obj
           clang-18 --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -Wall -Wextra -O2 \
-            -isysroot /opt/orbiskate/tools/openorbis-0.5.4 \
-            -isystem /opt/orbiskate/tools/openorbis-0.5.4/include \
-            -I/opt/orbiskate/tools/openorbis-0.5.4/include \
+            -isysroot $T \
+            -isystem $T/include \
+            -I$T/include \
             -c nfs_heat_drift_grip.c -o build/obj/nfs_heat_drift_grip.o
 
       - name: Link plugin
         run: |
-          T=/opt/orbiskate/tools/openorbis-0.5.4
-          ls -la $T/lib/crtlib.o
+          CRT=""
+          if [ -f $T/lib/crtlib.o ]; then CRT=$T/lib/crtlib.o; fi
           ld.lld-18 -m elf_x86_64 -pie \
             --script $T/link.x \
             --eh-frame-hdr \
             -L$T/lib \
             -lSceLibcInternal -lkernel -lSceUserService -lSceSysmodule \
-            $T/lib/crtlib.o \
+            $CRT \
             build/obj/nfs_heat_drift_grip.o -o build/nfs_heat_drift_grip.elf
 
       - name: Create .prx
-        env:
-          OO_PS4_TOOLCHAIN: /opt/orbiskate/tools/openorbis-0.5.4
         run: |
-          $OO_PS4_TOOLCHAIN/bin/linux/create-fself \
+          $T/bin/linux/create-fself \
             -in=build/nfs_heat_drift_grip.elf \
             -out=build/nfs_heat_drift_grip.oelf \
             --lib=build/nfs_heat_drift_grip.prx \
-            --paid 0x3800000000000011
+            --paid=0x3800000000000011
+          ls -la build
 
       - name: Upload .prx artifact
         uses: actions/upload-artifact@v4
         with:
           name: nfs_heat_drift_grip.prx
           path: build/nfs_heat_drift_grip.prx
+          if-no-files-found: error
           retention-days: 7
