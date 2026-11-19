@@ -191,7 +191,7 @@ int hook_sceIoClose(int fd) {
 }
 
 // ============================================================
-// IN-GAME MENU (no GoldHEN menu API - rendered via debug text)
+// IN-GAME MENU (rendered via debug text)
 // ============================================================
 static void draw_menu() {
     klog("\n=== %s v%s ===\n", PLUGIN_NAME, PLUGIN_VERSION);
@@ -240,9 +240,6 @@ static void *plugin_thread(void *arg) {
     orig_sceIoLseek = (void*)sceKernelDlsym(RTLD_DEFAULT, "sceIoLseek");
     if (!orig_sceIoOpen || !orig_sceIoRead || !orig_sceIoClose || !orig_sceIoLseek) { klog("[NFSHeat] Failed to resolve sceIo*\n"); return NULL; }
     
-    // Manual hooking via function pointer replacement
-    // Note: Real hooking would use GoldHEN's Detour/HDE64
-    // For now we rely on dlsym interception
     klog("[NFSHeat] Hooks ready (dlsym interception)\n");
     
     g_pluginActive = true; klog("[NFSHeat] Plugin active - HOLD L3+R3 for 3s to open menu\n");
@@ -251,26 +248,20 @@ static void *plugin_thread(void *arg) {
 }
 
 // ============================================================
-// GOLDHEN PLUGIN ENTRY POINTS
+// GOLDHEN PLUGIN ENTRY POINTS (crtlib calls these)
 // ============================================================
-int module_start(void) {
+int plugin_load(void) {
     klog("[NFSHeat] " PLUGIN_NAME " v" PLUGIN_VERSION " loading...\n");
     for (int i = 0; i < MAX_INTERCEPTED; i++) g_intercepted[i].fd = -1;
     ScePthread thread; scePthreadCreate(&thread, NULL, plugin_thread, NULL, "nfs_heat_drift_grip"); scePthreadDetach(thread);
     return 0;
 }
 
-int module_stop(void) {
+int plugin_unload(void) {
     g_pluginActive = false;
     klog("[NFSHeat] Plugin unloading\n");
     return 0;
 }
-
-// Compatibility aliases
-int plugin_load(void) { return module_start(); }
-int plugin_unload(void) { return module_stop(); }
-int _start(void) { return module_start(); }
-int _stop(void) { return module_stop(); }
 
 // ============================================================
 // LOGGING
