@@ -43,11 +43,14 @@ jobs:
       - name: Get GoldHEN Plugin Repository (for plugin_common.h)
         run: |
           git clone --depth 1 https://github.com/GoldHEN/GoldHEN_Plugins_Repository.git _deps/plugins
-      - name: Copy plugin_common.h to GoldHEN SDK include
-        run: |
-          cp _deps/plugins/common/plugin_common.h "$GOLDHEN_SDK/include/GoldHEN/"
+
       - name: Build GoldHEN SDK library
         run: make -C "$GOLDHEN_SDK" PRINTF=1
+
+      - name: Copy plugin_common.h to GoldHEN SDK include
+        run: |
+          mkdir -p "$GOLDHEN_SDK/include/GoldHEN/"
+          cp _deps/plugins/common/plugin_common.h "$GOLDHEN_SDK/include/GoldHEN/"
 
       - name: Build plugin
         run: |
@@ -65,4 +68,3 @@ jobs:
           path: _deps/plugins/bin/plugins/prx_final/nfs_heat_drift_grip.prx
           if-no-files-found: error
           retention-days: 30
-
